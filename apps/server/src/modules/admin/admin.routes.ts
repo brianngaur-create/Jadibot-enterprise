@@ -13,10 +13,16 @@ const router = Router();
 router.use(requireAuth, requirePermission('admin:read'));
 
 const idParam = z.object({ id: z.string().min(1) });
+
+// The API serializes these enums as lowercase, so accept either case on input
+// and normalise to the uppercase Prisma enum.
+const ciEnum = <T extends [string, ...string[]]>(values: T) =>
+  z.preprocess((v) => (typeof v === 'string' ? v.toUpperCase() : v), z.enum(values));
+
 const updateUserSchema = z.object({
-  status: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED']).optional(),
-  role: z.enum(['USER', 'ADMIN', 'SUPER_ADMIN']).optional(),
-  plan: z.enum(['STARTER', 'PRO', 'ENTERPRISE']).optional(),
+  status: ciEnum(['ACTIVE', 'SUSPENDED', 'BANNED']).optional(),
+  role: ciEnum(['USER', 'ADMIN', 'SUPER_ADMIN']).optional(),
+  plan: ciEnum(['STARTER', 'PRO', 'ENTERPRISE']).optional(),
 });
 const maintenanceSchema = z.object({
   enabled: z.boolean(),
