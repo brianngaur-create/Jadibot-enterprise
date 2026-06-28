@@ -1,0 +1,425 @@
+// ============================================================
+// JadiBot Enterprise — Prisma schema
+// Datasource: PostgreSQL · Client: prisma-client-js
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum Plan {
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum BotMode {
+  PUBLIC
+  SELF
+  GROUP
+}
+
+enum BotStatus {
+  OFFLINE
+  CONNECTING
+  PAIRING
+  ONLINE
+}
+
+enum SessionStatus {
+  PENDING
+  QR
+  PAIRING
+  CONNECTED
+  DISCONNECTED
+  LOGGED_OUT
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  SECURITY
+  SYSTEM
+}
+
+enum PluginStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PremiumScope {
+  USER
+  GROUP
+}
+
+// ─────────────────────────────────────────────────────────────
+// Identity & access
+// ─────────────────────────────────────────────────────────────
+
+/// Application user (platform tenant). Owns bots, api keys and settings.
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  passwordHash    String?
+  name            String
+  role            Role       @default(USER)
+  status          UserStatus @default(ACTIVE)
+  plan            Plan       @default(STARTER)
+  avatarInitials  String     @default("JB")
+  emailVerified   Boolean    @default(false)
+  twoFactorEnabled Boolean   @default(false)
+  googleId        String?    @unique
+  lastLoginAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  bots          Bot[]
+  refreshTokens RefreshToken[]
+  apiKeys       ApiKey[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  settings      UserSetting?
+
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+/// Persisted refresh tokens enable rotation + "logout from all devices".
+model RefreshToken {
+  id          String   @id @default(cuid())
+  userId      String
+  tokenHash   String   @unique
+  deviceId    String
+  userAgent   String?
+  ip          String?
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+/// Per-user key/value preferences (theme, notifications, locale...).
+model UserSetting {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  data      Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Bots, sessions & devices
+// ─────────────────────────────────────────────────────────────
+
+/// A bot belongs to a user and maps 1:1 to a WhatsApp session.
+model Bot {
+  id              String    @id @default(cuid())
+  ownerId         String
+  name            String
+  status          BotStatus @default(OFFLINE)
+  mode            BotMode   @default(PUBLIC)
+  prefix          String    @default(".")
+  phoneNumber     String?
+  device          String    @default("Unknown")
+  ping            Int?
+  uptimeStartedAt DateTime?
+  messagesHandled Int       @default(0)
+  activeUsers     Int       @default(0)
+  autoRead        Boolean   @default(false)
+  autoTyping      Boolean   @default(false)
+  autoRecording   Boolean   @default(false)
+  autoReact       Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  owner    User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  session  WaSession?
+  settings BotSetting?
+  logs     Log[]
+  commandStats CommandStat[]
+  premiums Premium[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@map("bots")
+}
+
+/// WhatsApp connection state for a bot. Auth credentials live encrypted in `creds`.
+model WaSession {
+  id             String        @id @default(cuid())
+  botId          String        @unique
+  status         SessionStatus @default(PENDING)
+  jid            String?
+  platform       String?
+  pairingCode    String?
+  qr             String?
+  reconnectCount Int           @default(0)
+  lastConnectedAt DateTime?
+  lastSeenAt     DateTime?
+  expiresAt      DateTime?
+  creds          Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("wa_sessions")
+}
+
+/// Owner-configurable behaviour for a single bot (anti-link, welcome, ...).
+model BotSetting {
+  id          String  @id @default(cuid())
+  botId       String  @unique
+  ownerName   String  @default("")
+  ownerNumber String  @default("")
+  bio         String  @default("")
+  language    String  @default("id")
+  timezone    String  @default("Asia/Jakarta")
+  footer      String  @default("JadiBot Enterprise")
+  welcome     Boolean @default(false)
+  goodbye     Boolean @default(false)
+  antiLink    Boolean @default(false)
+  antiSpam    Boolean @default(false)
+  antiCall    Boolean @default(false)
+  autoSticker Boolean @default(false)
+  extra       Json    @default("{}")
+  updatedAt   DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@map("bot_settings")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Plugins & commands
+// ─────────────────────────────────────────────────────────────
+
+/// Installable plugin metadata (the executable code lives on disk / storage).
+model Plugin {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String       @default("")
+  category    String       @default("general")
+  version     String       @default("1.0.0")
+  author      String       @default("unknown")
+  status      PluginStatus @default(ACTIVE)
+  source      String       @default("local")
+  permissions Json         @default("[]")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([status])
+  @@map("plugins")
+}
+
+/// Registry of commands discovered by the command loader.
+model Command {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  aliases     Json     @default("[]")
+  description String   @default("")
+  category    String   @default("general")
+  enabled     Boolean  @default(true)
+  ownerOnly   Boolean  @default(false)
+  adminOnly   Boolean  @default(false)
+  groupOnly   Boolean  @default(false)
+  privateOnly Boolean  @default(false)
+  premium     Boolean  @default(false)
+  cooldown    Int      @default(3)
+  usage       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  stats CommandStat[]
+
+  @@index([category])
+  @@map("commands")
+}
+
+/// Per-bot usage counters for a command (powers analytics).
+model CommandStat {
+  id        String   @id @default(cuid())
+  botId     String
+  commandId String
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  bot     Bot     @relation(fields: [botId], references: [id], onDelete: Cascade)
+  command Command @relation(fields: [commandId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, commandId])
+  @@map("command_stats")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Observability: logs, analytics, notifications, audit
+// ─────────────────────────────────────────────────────────────
+
+/// Structured application/bot logs surfaced in the dashboard.
+model Log {
+  id        String   @id @default(cuid())
+  botId     String?
+  level     LogLevel @default(INFO)
+  source    String   @default("system")
+  message   String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  bot Bot? @relation(fields: [botId], references: [id], onDelete: SetNull)
+
+  @@index([botId])
+  @@index([level])
+  @@index([createdAt])
+  @@map("logs")
+}
+
+/// Daily rollup of message/command/error counts per bot for analytics charts.
+model AnalyticsDaily {
+  id           String   @id @default(cuid())
+  date         DateTime @db.Date
+  botId        String?
+  messages     Int      @default(0)
+  commands     Int      @default(0)
+  errors       Int      @default(0)
+  activeUsers  Int      @default(0)
+
+  @@unique([date, botId])
+  @@index([date])
+  @@map("analytics_daily")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType @default(INFO)
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  meta      Json?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  resource  String?
+  ip        String?
+  userAgent String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// API keys, webhooks, premium & moderation
+// ─────────────────────────────────────────────────────────────
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  prefix     String    @unique
+  keyHash    String    @unique
+  scopes     Json      @default("[]")
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_keys")
+}
+
+model Webhook {
+  id           String   @id @default(cuid())
+  botId        String?
+  url          String
+  events       Json     @default("[]")
+  secret       String?
+  active       Boolean  @default(true)
+  lastStatus   Int?
+  lastDeliveryAt DateTime?
+  failureCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([botId])
+  @@map("webhooks")
+}
+
+model Premium {
+  id        String       @id @default(cuid())
+  botId     String
+  scope     PremiumScope @default(USER)
+  target    String
+  expiresAt DateTime?
+  createdAt DateTime     @default(now())
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, scope, target])
+  @@map("premiums")
+}
+
+/// Global key/value application settings (maintenance mode, feature flags...).
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
