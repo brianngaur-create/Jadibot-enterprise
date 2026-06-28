@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# build output
+dist/
+.next/
+out/
+build/
+
+# logs
+*.log
+/logs/
+apps/*/logs/
+
+# WhatsApp session storage / runtime data
+apps/server/storage/
+
+# misc
+.DS_Store
+*.pem
+coverage/

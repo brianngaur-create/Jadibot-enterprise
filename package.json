@@ -1,0 +1,20 @@
+{
+  "name": "jadibot-enterprise",
+  "version": "1.0.0",
+  "private": true,
+  "description": "JadiBot Enterprise — multi-tenant WhatsApp bot SaaS (monorepo)",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace apps/web",
+    "dev:server": "npm run dev --workspace apps/server",
+    "build:web": "npm run build --workspace apps/web",
+    "build:server": "npm run build --workspace apps/server",
+    "lint": "npm run lint --workspace apps/web && npm run lint --workspace apps/server",
+    "typecheck": "npm run typecheck --workspace apps/web && npm run typecheck --workspace apps/server"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
