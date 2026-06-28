@@ -67,6 +67,17 @@ function statusCodeOf(state: Partial<ConnectionState>): number | undefined {
 class SessionManager {
   private readonly sessions = new Map<string, SessionInstance>();
   private readonly waLogger = pino({ level: 'silent' });
+  private ready = false;
+
+  /** True once the engine has booted and attempted session recovery. */
+  isReady(): boolean {
+    return this.ready;
+  }
+
+  /** Number of sessions currently in the ONLINE state. */
+  countConnected(): number {
+    return this.getAll().filter((s) => s.status === 'ONLINE').length;
+  }
 
   private sessionDir(botId: string): string {
     return path.join(env.WA_SESSION_PATH, `bot_${botId}`);
@@ -298,6 +309,7 @@ class SessionManager {
    * logged-out sessions are skipped and cleaned up.
    */
   async recoverAll(): Promise<void> {
+    this.ready = true;
     const sessions = await prisma.waSession.findMany({
       where: { status: { in: ['CONNECTED', 'DISCONNECTED'] } },
       include: { bot: true },

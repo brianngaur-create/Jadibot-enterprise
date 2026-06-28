@@ -3,7 +3,7 @@ dist
 .env
 .env.local
 *.log
-logs
+/logs/
 storage/sessions
 storage/temp
 storage/media

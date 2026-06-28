@@ -44,7 +44,9 @@ export function createApp(): Express {
   );
   app.use(
     cors({
-      origin: corsOrigins.length ? corsOrigins : true,
+      // With credentials enabled, never reflect arbitrary origins. Fall back to
+      // a permissive origin only in non-production when none are configured.
+      origin: corsOrigins.length ? corsOrigins : env.NODE_ENV === 'production' ? false : true,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: [

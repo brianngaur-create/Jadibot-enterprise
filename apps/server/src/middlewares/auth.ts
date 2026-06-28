@@ -65,6 +65,9 @@ export async function requireApiKey(
     include: { user: true },
   });
   if (!key || key.revokedAt) throw new UnauthorizedError('Invalid API key');
+  if (key.user.status === 'BANNED' || key.user.status === 'SUSPENDED') {
+    throw new UnauthorizedError('Account is not active');
+  }
 
   await prisma.apiKey.update({
     where: { id: key.id },

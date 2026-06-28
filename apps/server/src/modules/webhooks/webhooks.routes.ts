@@ -21,8 +21,11 @@ const idParam = z.object({ id: z.string().min(1) });
 
 router.get(
   '/',
-  asyncHandler(async (_req, res) => {
-    const webhooks = await prisma.webhook.findMany({ orderBy: { createdAt: 'desc' } });
+  asyncHandler(async (req, res) => {
+    const webhooks = await prisma.webhook.findMany({
+      where: { userId: req.auth!.id },
+      orderBy: { createdAt: 'desc' },
+    });
     return sendSuccess(res, webhooks, 'Webhooks');
   }),
 );
@@ -31,7 +34,9 @@ router.post(
   '/',
   validate({ body: createSchema }),
   asyncHandler(async (req, res) => {
-    const webhook = await prisma.webhook.create({ data: req.body });
+    const webhook = await prisma.webhook.create({
+      data: { ...req.body, userId: req.auth!.id },
+    });
     return sendSuccess(res, webhook, 'Webhook created', 201);
   }),
 );
@@ -40,7 +45,9 @@ router.delete(
   '/:id',
   validate({ params: idParam }),
   asyncHandler(async (req, res) => {
-    const existing = await prisma.webhook.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.webhook.findFirst({
+      where: { id: req.params.id, userId: req.auth!.id },
+    });
     if (!existing) throw new NotFoundError('Webhook not found');
     await prisma.webhook.delete({ where: { id: req.params.id } });
     return sendSuccess(res, null, 'Webhook deleted');

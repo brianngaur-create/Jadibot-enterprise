@@ -49,7 +49,9 @@ router.patch(
   '/users/:id',
   requirePermission('admin:users'),
   validate({ params: idParam, body: updateUserSchema }),
-  asyncHandler(async (req, res) => sendSuccess(res, await adminService.updateUser(req.params.id, req.body), 'User updated')),
+  asyncHandler(async (req, res) =>
+    sendSuccess(res, await adminService.updateUser(req.params.id, req.body, req.auth!.role), 'User updated'),
+  ),
 );
 
 router.delete(

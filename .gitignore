@@ -14,7 +14,8 @@ build/
 
 # logs
 *.log
-logs/
+/logs/
+apps/*/logs/
 
 # WhatsApp session storage / runtime data
 apps/server/storage/

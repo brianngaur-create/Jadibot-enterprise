@@ -64,6 +64,7 @@ async function issueSession(user: User, ctx: RequestContext, rememberMe: boolean
       deviceId: ctx.deviceId,
       userAgent: ctx.userAgent,
       ip: ctx.ip,
+      rememberMe,
       expiresAt: refreshExpiresAt,
     },
   });
@@ -119,6 +120,7 @@ export const authService = {
       throw new UnauthorizedError('Invalid email or password');
     }
     if (user.status === 'BANNED') throw new ForbiddenError('This account has been banned');
+    if (user.status === 'SUSPENDED') throw new ForbiddenError('This account has been suspended');
 
     const ok = await verifyPassword(input.password, user.passwordHash);
     if (!ok) throw new UnauthorizedError('Invalid email or password');
@@ -168,7 +170,7 @@ export const authService = {
       data: { revokedAt: new Date() },
     });
 
-    return issueSession(user, { ...ctx, deviceId: stored.deviceId }, false);
+    return issueSession(user, { ...ctx, deviceId: stored.deviceId }, stored.rememberMe);
   },
 
   async logout(refreshToken: string | undefined): Promise<void> {

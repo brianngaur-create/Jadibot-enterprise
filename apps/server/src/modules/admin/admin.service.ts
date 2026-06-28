@@ -1,7 +1,7 @@
 import type { Plan, Role, UserStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { redis } from '../../lib/redis';
-import { NotFoundError } from '../../lib/errors';
+import { ForbiddenError, NotFoundError } from '../../lib/errors';
 import { serializeAdminUser } from '../../utils/serializers';
 import { systemMetrics } from '../../utils/system-metrics';
 import { sessionManager } from '../../whatsapp/session-manager';
@@ -56,7 +56,7 @@ export const adminService = {
     return {
       database: db ? 'up' : 'down',
       redis: redisOk ? 'up' : 'down',
-      whatsapp: sessionManager.getAll().length >= 0 ? 'up' : 'down',
+      whatsapp: sessionManager.isReady() ? 'up' : 'down',
       socket: 'up',
     };
   },
@@ -98,9 +98,15 @@ export const adminService = {
   async updateUser(
     id: string,
     data: { status?: UserStatus; role?: Role; plan?: Plan },
+    actorRole: Role,
   ) {
     const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing) throw new NotFoundError('User not found');
+    // Only a SUPER_ADMIN may grant, revoke, or otherwise touch the SUPER_ADMIN
+    // role — prevents an ADMIN from escalating their own (or anyone's) privileges.
+    if (actorRole !== 'SUPER_ADMIN' && (data.role === 'SUPER_ADMIN' || existing.role === 'SUPER_ADMIN')) {
+      throw new ForbiddenError('Only a super admin can manage super admin accounts');
+    }
     const user = await prisma.user.update({
       where: { id },
       data,
