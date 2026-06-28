@@ -3,6 +3,25 @@ import type { AuthSession, AuthTokens } from './types'
 const SESSION_KEY = 'jb_session'
 const SESSION_KEY_PERSIST = 'jb_session_persist'
 
+// Mirror of the auth cookie the Next.js middleware reads to gate protected
+// routes. It carries only the role for routing decisions — the real tokens
+// live in storage and the HttpOnly refresh cookie, and the backend always
+// re-validates JWTs, so this routing hint being JS-readable is intentional.
+const AUTH_COOKIE_NAME = 'jb_auth'
+
+function writeAuthCookie(session: AuthSession): void {
+  if (typeof document === 'undefined') return
+  const value = btoa(JSON.stringify({ role: session.user.role }))
+  const parts = [`${AUTH_COOKIE_NAME}=${value}`, 'path=/', 'SameSite=Lax']
+  if (session.rememberMe) parts.push(`max-age=${30 * 24 * 60 * 60}`)
+  document.cookie = parts.join('; ')
+}
+
+function clearAuthCookie(): void {
+  if (typeof document === 'undefined') return
+  document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`
+}
+
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000
 const INACTIVITY_CHECK_INTERVAL_MS = 60 * 1000
 
@@ -19,6 +38,7 @@ export function saveSession(session: AuthSession): void {
   if (session.rememberMe && typeof localStorage !== 'undefined') {
     localStorage.setItem(SESSION_KEY_PERSIST, data)
   }
+  writeAuthCookie(session)
 }
 
 export function loadSession(): AuthSession | null {
@@ -55,6 +75,7 @@ export function clearSession(): void {
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(SESSION_KEY_PERSIST)
   }
+  clearAuthCookie()
   stopInactivityMonitor()
 }
 
